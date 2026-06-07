@@ -543,6 +543,105 @@ def vista_auditoria():
     mostrar_log_acciones()
 
 
+# ─── Vista Alta de paciente ───────────────────────────────────────────────────
+
+def vista_alta_paciente(id_medico: str):
+    """Formulario para registrar un paciente nuevo. El PIN se guarda encriptado."""
+    from core.sheets import append_paciente, get_paciente
+    from core.audit import registrar_accion
+
+    st.markdown("## ➕ Alta de paciente")
+    st.caption(
+        "Registrá un paciente nuevo. El PIN se guarda **encriptado** automáticamente; "
+        "nunca queda visible en la base de datos."
+    )
+
+    with st.form("form_alta_paciente", clear_on_submit=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            id_pac = st.text_input("ID del paciente *", placeholder="Ej: PAC-001")
+            nombre = st.text_input("Nombre y apellido *", placeholder="Ej: Juan Pérez")
+            email = st.text_input("Email", placeholder="opcional")
+            fecha_nac = st.date_input(
+                "Fecha de nacimiento", value=None, format="DD/MM/YYYY"
+            )
+        with c2:
+            enfermedad = st.selectbox(
+                "Enfermedad *",
+                options=["CU — Colitis Ulcerosa", "EC — Enfermedad de Crohn"],
+            )
+            basal = st.number_input(
+                "Deposiciones basales (en remisión)",
+                min_value=0, max_value=20, value=1, step=1,
+            )
+            medicacion = st.text_input("Medicación actual", placeholder="opcional")
+            pin = st.text_input(
+                "PIN de acceso (4 dígitos) *", type="password", placeholder="Ej: 1234"
+            )
+
+        enviado = st.form_submit_button(
+            "Registrar paciente", use_container_width=True, type="primary"
+        )
+
+    if not enviado:
+        return
+
+    # ── Normalización + validaciones ──
+    id_pac = (id_pac or "").strip().upper()
+    nombre = (nombre or "").strip()
+    email = (email or "").strip()
+    medicacion = (medicacion or "").strip()
+    pin = (pin or "").strip()
+
+    errores = []
+    if not id_pac:
+        errores.append("Falta el ID del paciente.")
+    if not nombre:
+        errores.append("Falta el nombre del paciente.")
+    if not (pin.isdigit() and len(pin) == 4):
+        errores.append("El PIN debe ser de 4 dígitos numéricos (ej: 1234).")
+    if id_pac and get_paciente(id_pac):
+        errores.append(f"Ya existe un paciente con ID {id_pac}. Elegí otro.")
+
+    if errores:
+        for e in errores:
+            st.error(e, icon="❌")
+        return
+
+    enfermedad_cod = "CU" if enfermedad.startswith("CU") else "EC"
+
+    nuevo = {
+        "ID_Paciente": id_pac,
+        "Nombre": nombre,
+        "Email": email,
+        "Fecha_Nacimiento": fecha_nac.isoformat() if fecha_nac else "",
+        "Enfermedad": enfermedad_cod,
+        "Basal_Deposiciones": str(int(basal)),
+        "Medicacion_Actual": medicacion,
+        "PIN": pin,  # append_paciente() lo encripta (hash SHA-256)
+    }
+
+    try:
+        append_paciente(nuevo)
+        registrar_accion(
+            id_medico=id_medico,
+            id_paciente=id_pac,
+            tipo_accion="Alta de paciente",
+            detalle=f"Alta de {nombre} ({enfermedad_cod})",
+            resultado="Paciente registrado y activo",
+        )
+        st.success(f"Paciente {id_pac} registrado correctamente.", icon="✅")
+        st.info(
+            f"Pasale al paciente el **link de la app**, su **ID: {id_pac}** y su "
+            f"**PIN: {pin}**.\n\n"
+            "En su primer ingreso, la app le va a pedir aceptar el **consentimiento "
+            "informado** antes de poder cargar datos.",
+            icon="📋",
+        )
+    except Exception as e:
+        st.error(f"No se pudo registrar el paciente: {e}", icon="❌")
+
+
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 def sidebar(id_medico: str):
@@ -553,7 +652,7 @@ def sidebar(id_medico: str):
 
         vista = st.radio(
             "Navegación",
-            options=["👥 Pacientes", "📁 Auditoría"],
+            options=["👥 Pacientes", "➕ Alta de paciente", "📁 Auditoría"],
             index=0,
         )
 
@@ -602,15 +701,23 @@ def main():
     # Sidebar y navegación
     vista_sel = sidebar(id_medico)
 
-    # Zoom de paciente (sobreescribe la vista)
-    if st.session_state.get("vista") == "zoom" and st.session_state.get("zoom_paciente"):
+    # Zoom de paciente: solo dentro de la sección Pacientes
+    if (
+        "Pacientes" in vista_sel
+        and st.session_state.get("vista") == "zoom"
+        and st.session_state.get("zoom_paciente")
+    ):
         vista_zoom_paciente(st.session_state["zoom_paciente"], id_medico)
         return
 
     if "Pacientes" in vista_sel:
         st.session_state["vista"] = "poblacional"
         vista_poblacional(id_medico)
+    elif "Alta" in vista_sel:
+        st.session_state.pop("zoom_paciente", None)
+        vista_alta_paciente(id_medico)
     elif "Auditoría" in vista_sel:
+        st.session_state.pop("zoom_paciente", None)
         vista_auditoria()
 
 
