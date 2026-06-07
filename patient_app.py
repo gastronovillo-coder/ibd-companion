@@ -220,7 +220,7 @@ def pantalla_registro_diario(id_paciente: str, paciente: dict):
         fc = st.number_input("Frecuencia cardíaca (lpm, si la mediste)", min_value=0, max_value=200, value=0)
         temperatura = st.number_input(
             "Temperatura corporal (°C, si la mediste)",
-            min_value=35.0, max_value=42.0, value=0.0, step=0.1,
+            min_value=0.0, max_value=42.0, value=0.0, step=0.1,
             help="Ej: 38.5°C. Dejá en 0 si no te tomás la temperatura.",
         )
         actividades = st.selectbox("¿Cómo estuvieron tus actividades diarias?", options=OPCIONES_ACTIVIDADES)
